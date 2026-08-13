@@ -139,7 +139,6 @@ graph TD
 `/ai/agent/chat` 的异步工具执行流程如下。
 
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': {'fontSize': '14px'}}}%%
 sequenceDiagram
     participant C as Client
     participant A as AiController
@@ -166,16 +165,6 @@ sequenceDiagram
         E-->>A: Result.success
         A-->>C: answer
     end
-
-    classDef client fill:#3B82F6,stroke:#2563EB,color:#FFFFFF
-    classDef gateway fill:#F59E0B,stroke:#D97706,color:#FFFFFF
-    classDef service fill:#10B981,stroke:#059669,color:#FFFFFF
-    classDef data fill:#8B5CF6,stroke:#7C3AED,color:#FFFFFF
-
-    class C client
-    class A gateway
-    class E,AI,T,S service
-    class R data
 ```
 ## 配置
 
