@@ -1,0 +1,34 @@
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+
+# 编译产物
+target/
+out/
+*.class
+
+# 日志
+*.log
+logs/
+
+# 操作系统
+Thumbs.db
+.DS_Store
+
+# 敏感配置（关键！）
+**/application.properties
+**/application-dev.properties
+**/application-prod.properties
+**/application-*.properties
+
+# Maven 本地仓库
+.m2/
+
+# 临时文件
+*.tmp
+*.swp
+*.bak
