@@ -52,15 +52,16 @@ Open `src/main/resources/application.properties` and replace the API keys for `s
 ### Run
 
 ```bash
-./mvnw clean package
+mvn clean package
 java -jar target/test-0.0.1-SNAPSHOT.jar
 ```
 
-Docker alternative:
+Docker alternative(可选):
+
+项目已提供 Dockerfile，支持容器化部署：
 
 ```bash
-./mvnw clean package
-docker build -f DockerFile -t agent-test .
+docker build -t agent-test .
 docker run -p 8086:8086 agent-test
 ```
 
