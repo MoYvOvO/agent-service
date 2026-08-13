@@ -150,7 +150,7 @@ sequenceDiagram
     participant S as product-service
 
     C->>A: POST /ai/agent/chat
-    A->>R: GET agent:chat:{md5(message)}
+    A->>R: GET agent:chat:md5(message)
     alt Cache hit
         R-->>A: cached answer
         A-->>C: Result.success
@@ -167,17 +167,16 @@ sequenceDiagram
         A-->>C: answer
     end
 
-    classDef client fill:#3B82F6,stroke:#2563EB,color:#fff
-    classDef gateway fill:#F59E0B,stroke:#D97706,color:#fff
-    classDef service fill:#10B981,stroke:#059669,color:#fff
-    classDef data fill:#8B5CF6,stroke:#7C3AED,color:#fff
+    classDef client fill:#3B82F6,stroke:#2563EB,color:#FFFFFF
+    classDef gateway fill:#F59E0B,stroke:#D97706,color:#FFFFFF
+    classDef service fill:#10B981,stroke:#059669,color:#FFFFFF
+    classDef data fill:#8B5CF6,stroke:#7C3AED,color:#FFFFFF
 
     class C client
     class A gateway
     class E,AI,T,S service
     class R data
 ```
-
 ## 配置
 
 主要配置位于 `src/main/resources/application.properties`。
