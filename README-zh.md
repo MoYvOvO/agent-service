@@ -87,7 +87,7 @@ curl -X POST http://localhost:8086/ai/chat \
 ```bash
 curl -X POST http://localhost:8086/ai/rag/chat \
   -H "Content-Type: application/json" \
-  -d '{"message": "秒杀规则是什么"}'
+  -d '{"message": "根据资料秒杀规则是什么"}'
 ```
 
 ### 结构化输出
