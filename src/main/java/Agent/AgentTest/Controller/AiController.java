@@ -240,20 +240,20 @@ public class AiController {
             return "未知工具：" + toolName;
         }
     }
-    @PostMapping("/chat")
-    public CompletableFuture<Result<String>> unifiedChat(@RequestBody ChatRequest request) {
-        String message = request.getMessage();
-        String userId = request.getUserId() == null ? "anonymous" : request.getUserId();
-
-        if (isToolCall(message)) {
-            return toolChat(message, userId);
-//        } else if (isRag(message)) {
-//            log.info("🔍 走 RAG 分支（独立接口）");  // 加这行
-//            return CompletableFuture.completedFuture(ragChat(request));
-        } else {
-            return CompletableFuture.completedFuture(Result.success(normalChat(message, userId)));
-        }
-    }
+//    @PostMapping("/chat")
+//    public CompletableFuture<Result<String>> unifiedChat(@RequestBody ChatRequest request) {
+//        String message = request.getMessage();
+//        String userId = request.getUserId() == null ? "anonymous" : request.getUserId();
+//
+//        if (isToolCall(message)) {
+//            return toolChat(message, userId);
+////        } else if (isRag(message)) {
+////            log.info("🔍 走 RAG 分支（独立接口）");  // 加这行
+////            return CompletableFuture.completedFuture(ragChat(request));
+//        } else {
+//            return CompletableFuture.completedFuture(Result.success(normalChat(message, userId)));
+//        }
+//    }
     // 辅助方法：提取工具名（用于记录）
     private String extractToolName(ToolCall call) {
         ObjectMapper mapper = new ObjectMapper();
@@ -264,7 +264,41 @@ public class AiController {
         }
         return (String) callMap.get("name");
     }
+@PostMapping("/chat")
+public CompletableFuture<Result<String>> unifiedChat(@RequestBody ChatRequest request) {
+    String message = request.getMessage();
+    String userId = request.getUserId() == null ? "anonymous" : request.getUserId();
+    String cacheKey = "agent:chat:" + DigestUtils.md5Hex(message);
+    // 1. 检查 Redis 缓存
+    String cached = redisTemplate.opsForValue().get(cacheKey);
+    if (cached != null) {
+        log.info("✅ 命中缓存，直接返回");
+        return CompletableFuture.completedFuture(Result.success("【缓存】" + cached));
+    }
+    return CompletableFuture.supplyAsync(() -> {
+        log.info("🚀 开始调用大模型，线程: {}", Thread.currentThread().getName());
+        try {
 
+            String answer = chatClient.prompt()
+                    .user(message)
+                    .tools(agentToolService)
+                    .call()
+                    .content();
+
+            // 3. 存入缓存
+            if (answer != null && !answer.isEmpty()) {
+                redisTemplate.opsForValue().set(cacheKey, answer, 1, TimeUnit.DAYS);
+                log.info("💾 已存入缓存");
+            }
+            return Result.success(answer);
+
+        } catch (Exception e) {
+            log.error("AI 调用失败", e);
+            // 4. 降级处理
+            return Result.error("AI 服务繁忙，请稍后重试：" + e.getMessage());
+        }
+    }, aiExecutor);
+}
     // ========== Sentinel 限流初始化 ==========
     @PostConstruct
     public void initSentinelRules() {
