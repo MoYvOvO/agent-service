@@ -264,41 +264,85 @@ public class AiController {
         }
         return (String) callMap.get("name");
     }
-@PostMapping("/chat")
-public CompletableFuture<Result<String>> unifiedChat(@RequestBody ChatRequest request) {
-    String message = request.getMessage();
-    String userId = request.getUserId() == null ? "anonymous" : request.getUserId();
-    String cacheKey = "agent:chat:" + DigestUtils.md5Hex(message);
-    // 1. 检查 Redis 缓存
-    String cached = redisTemplate.opsForValue().get(cacheKey);
-    if (cached != null) {
-        log.info("✅ 命中缓存，直接返回");
-        return CompletableFuture.completedFuture(Result.success("【缓存】" + cached));
-    }
-    return CompletableFuture.supplyAsync(() -> {
-        log.info("🚀 开始调用大模型，线程: {}", Thread.currentThread().getName());
-        try {
+    @PostMapping("/chat")
+    public CompletableFuture<Result<String>> unifiedChat(@RequestBody ChatRequest request) {
+        String message = request.getMessage();
+        String userId = request.getUserId() == null ? "anonymous" : request.getUserId();
+        String cacheKey = "agent:chat:" + DigestUtils.md5Hex(message);
 
-            String answer = chatClient.prompt()
-                    .user(message)
-                    .tools(agentToolService)
-                    .call()
-                    .content();
-
-            // 3. 存入缓存
-            if (answer != null && !answer.isEmpty()) {
-                redisTemplate.opsForValue().set(cacheKey, answer, 1, TimeUnit.DAYS);
-                log.info("💾 已存入缓存");
-            }
-            return Result.success(answer);
-
-        } catch (Exception e) {
-            log.error("AI 调用失败", e);
-            // 4. 降级处理
-            return Result.error("AI 服务繁忙，请稍后重试：" + e.getMessage());
+        // 1. 缓存命中
+        String cached = redisTemplate.opsForValue().get(cacheKey);
+        if (cached != null) {
+            log.info("✅ 命中缓存，直接返回");
+            return CompletableFuture.completedFuture(Result.success("【缓存】" + cached));
         }
-    }, aiExecutor);
-}
+
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                String historyKey = "chat:history:" + userId;
+                List<String> history = redisTemplate.opsForList().range(historyKey, 0, -1);
+                StringBuilder fullPrompt = new StringBuilder();
+                if (history != null && !history.isEmpty()) {
+                    for (String h : history) {
+                        fullPrompt.append(h).append("\n");
+                    }
+                }
+                fullPrompt.append("用户: ").append(message);
+
+                ChatResponse response = chatClient.prompt()
+                        .user(fullPrompt.toString())
+                        .tools(agentToolService)
+                        .call()
+                        .chatResponse();
+                if (response == null || response.getResult() == null) {
+                    return Result.error("AI 未返回有效结果");
+                }
+                String finalAnswer;
+                List<ToolCall> toolCalls = response.getResult().getOutput().getToolCalls();
+
+                // ========== 处理工具调用 ==========
+                if (toolCalls != null && !toolCalls.isEmpty()) {
+                    if (toolCalls.size() == 1) {
+                        // 单工具：直接执行
+                        Object result = executeTool(toolCalls.get(0));
+                        finalAnswer = result.toString();
+                    } else {
+                        // 多工具：逐个执行，汇总后再调模型生成最终回答
+                        List<Map<String, Object>> toolResults = new ArrayList<>();
+                        for (ToolCall call : toolCalls) {
+                            String toolName = extractToolName(call);
+                            Object result = executeTool(call);
+                            toolResults.add(Map.of("toolName", toolName, "result", result));
+                        }
+                        String summaryPrompt = String.format(promptConfig.getOrchestrate(), message, toolResults);
+                        finalAnswer = chatClient.prompt()
+                                .user(summaryPrompt)
+                                .call()
+                                .content();
+                    }
+                } else {
+                    // 无工具调用：直接返回文本
+                    finalAnswer = response.getResult().getOutput().getText();
+                }
+
+                // ========== 存入缓存 + 会话历史 ==========
+                if (finalAnswer != null && !finalAnswer.isEmpty()) {
+                    redisTemplate.opsForValue().set(cacheKey, finalAnswer, 1, TimeUnit.DAYS);
+                    redisTemplate.opsForList().rightPush(historyKey, "用户: " + message);
+                    redisTemplate.opsForList().rightPush(historyKey, "AI: " + finalAnswer);
+                    redisTemplate.opsForList().trim(historyKey, -10, -1);
+                    redisTemplate.expire(historyKey, 30, TimeUnit.MINUTES);
+                    log.info("💾 已存入缓存和历史");
+                }
+
+                return Result.success(finalAnswer);
+
+            } catch (Exception e) {
+                log.error("AI 调用失败", e);
+                return Result.error("AI 服务繁忙：" + e.getMessage());
+            }
+        }, aiExecutor);
+    }
     // ========== Sentinel 限流初始化 ==========
     @PostConstruct
     public void initSentinelRules() {
